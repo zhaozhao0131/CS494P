@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<!-- last edit Sat 7:18 PM June 8 2019 -->
+<head>
+    <meta name="author" content="Jingtao Cheng" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    <title>Socket.IO chat</title>
+    <!-- stylesheet for inputbar and userList menu, userList selector, messages Panel -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font: 13px Helvetica, Arial;
+        }
+
+        #inputBar {
+            background: #000;
+            padding: 3px;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }
+
+        #inputBar input {
+            border: 0;
+            padding: 10px;
+            width: 80%;
+            margin-right: .4%;
+            margin-left: .4%;
+        }
+
+        #inputBar select {
+            width: 9%;
+            height: 30px;
+        }
+
+        #inputBar button {
+            width: 9%;
+            background: rgb(130, 224, 255);
+            border: none;
+            padding: 10px;
+        }
+
+        #userList {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #userList li {
+            padding: 5px 10px;
+        }
+
+        #userList li:nth-child(odd) {
+            background: lightgoldenrodyellow;
+        }
+
+        #messages {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #messages li {
+            padding: 5px 10px;
+        }
+
+        #messages li:nth-child(odd) {
+            background: whitesmoke;
+        }
+
+        .container {
+            display: flex;
+        }
+
+        .container #leftPanel {
+            width: 200px;
+            height: 100%;
+            background: lightblue;
+        }
+
+        .container #rightPanel {
+            flex: 1;
+            height: 100%;
+        }
+
+        .container #leftPanel h1 {
+            margin: 5px;
+        }
+
+        .container #rightPanel h1 {
+            margin: 5px;
+        }
+
+        #navbar #nav-wrapper ul {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #333;
+        }
+
+        #navbar #nav-wrapper li {
+            float: left;
+        }
+
+        #navbar #nav-wrapper li a {
+            display: block;
+            color: white;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+        }
+
+        #navbar #nav-wrapper li a:hover {
+            background-color: #111;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- navigation bar for room select, also with the 'button' to create new room  -->
+    <nav id="navbar">
+        <div id="nav-wrapper">
+            <ul>
+                <li><a id="room1" onclick="switchRoom(this.id)" href="javascript:void(0)">Room1</a></li>
+                <li><a id="room2" onclick="switchRoom(this.id)" href="javascript:void(0)">Room2</a></li>
+                <li><a id="room3" onclick="switchRoom(this.id)" href="javascript:void(0)">Room3</a></li>
+                <li><a id="createRoom" href="javascript:void(0)">Create New Room</a></li>
+                <!-- $('#createRoom').on("click",function(){
+                    ...
+                }) -->
+            </ul>
+        </div>
+    </nav>
+    <!--  left panel will show the current active user List  -->
+    <div class="container">
+        <div id="leftPanel">
+            <h1>User List</h1>
+            <ul id="userList"></ul>
+        </div>
+        <!-- right panel will show the sending message (public and private) -->
+        <div id="rightPanel">
+            <h1>Messages</h1>
+            <ul id="messages"></ul>
+        </div>
+    </div>
+    <!-- input bar for entering messages and select specific user to send msg -->
+    <div>
+        <div id="inputBar">
+            <select id="userSelect">
+                <option value="all">All Users</option>
+            </select>
+            <input id="MSG" autocomplete="off" placeholder="input message here, send with Enter key or send button" />
+            <button id="sendMSG">Send</button>
+        </div>
+    </div>
+
+    <!-- required javascript source -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-1.11.3.js"></script>
+
+    <script>
+        var socket = io("http://localhost:3000");
+
+        var userName = '';
+        var receiverName = 'all';
+        var currentRoom = 'room1';
+
+        //alert functions when the entered userName is aready registed:
+        socket.on('alert userName exists', (name) => {
+            alert('Username:  ' + ' was exist !!!');
+            EnterUserName();
+        });
+
+        //send welcome msg for new user join current room
+        socket.on('msg user join', (name, room) => {
+            var date = FormatDate(new Date());
+            $('#messages').append($('<li>').text(date + name + ' Join ' + room + ', WELCOME!'));
+            currentRoom = room;
+
+            // $('#userList').append($('<li>').text(name + ' in ' + room).css({
+            //     'font-weight': 'bolder'
+            // }));
+        });
+
+        //send alert msg when any user is leave current room
+        socket.on('msg user leave', (name, room) => {
+            var date = FormatDate(new Date());
+
+            //append user leave message to message panel 
+            $('#messages').append($('<li>').text(date + name + ' Left ' + room + '!'));
+            //delete left user from selector and user List panel
+            $('#userSelect').find('[value=\'' + name + '\']').remove();
+            $("ul#userList li:contains('" + name + "')").remove();
+            currentRoom = '';
+        });
+
+        //when disconnect pop window to confirm, avoid accidental disconnect
+        socket.on('disconnect', () => {
+            $(window).unbind('beforeunload');
+            alert('Lost connection!!\nRefresh page.');
+            window.location.reload();
+        });
+
+        //functionalitys: 
+
+        //receive server's msg to add joined user to userList selector and List panel
+        socket.on('update userList', (name, room) => {
+            if (currentRoom == room && userName == name) {
+                // if (userName != name) {
+                //     $('#userSelect').append($('<option></option>').attr('value', name).text(name));
+                // }
+
+                if ($('#userList').text().indexOf(name) == -1) {
+                    $('#userList').append($('<li>').text(name + ' in ' + room).css({
+                        'font-weight': 'bolder'
+                    }));
+                }
+            } else if (userName != name && $('#userList').text().indexOf(name) == -1) {
+                $('#userList').append($('<li>').text(name + ' in ' + room).css({
+                    'font-weight': 'bolder'
+                }));
+                
+            } else if (userName != name && $('#userSelect').val().indexOf(name) == -1) {
+                $('#userSelect').append($('<option></option>').attr('value', name).text(name));
+
+            }
+        });
+
+        //receive server's msg to display in messages panel
+        socket.on('chat message', (userName, receiverName, msg, date) => {
+            displayMessage(userName, receiverName, msg, date);
+        });
+
+        socket.on('error no user', (name, room) => {
+            $('#messages').append($('<li>').text('Alert: ' + name + ' not in ' + room + ' !').css({
+                'color': '#FF6347',
+                'font-weight': 'bolder'
+            }));
+        })
+
+        //get the input from inputBar and send to server
+        function emitMessage() {
+            if ($('#MSG').val().trim() != '') {
+                var date = new Date();
+                var msg = $('#MSG').val();
+                displayMessage(userName, receiverName, msg, date);
+                socket.emit('chat message', userName, receiverName, msg, date);
+                $('#MSG').val('');
+            }
+            $('#MSG').focus();
+        }
+
+        //add on
+        function switchRoom(newroom) {
+            socket.emit('switchRoom', userName, currentRoom, newroom);
+            console.log(newroom + ' onclick!');
+            // $('#userList').append($('<li>').text(name + ' in ' + room).css({
+            //     'font-weight': 'bolder'
+            // }));
+        }
+
+        //helper function for better viewing in message panel
+        function displayMessage(userName, receiverName, msg, date) {
+            if (msg) {
+                //when receiver is all means public, otherwise it's private msg
+                if (receiverName == 'all')
+                    $('#messages').append($('<li>').text(FormatDate(date) + '  ' + userName + ': ' + msg));
+                else {
+                    // $('#messages').append($('<li>').text(FormatDate(date) + ' Private chat: ' + userName + '  to  ' + receiverName + ': ' + msg));
+                    $('#messages').append($('<li>').text(FormatDate(date) + '  ' + ' Private chat: [ ' + userName +
+                        '  =>  ' +
+                        receiverName + ' ] : ' + msg).css({
+                        'color': '#000066',
+                        'font-weight': 'bolder'
+                    }));
+                }
+            }
+        }
+
+        //help to figure out the reconnection problem
+        $(window).on('beforeunload', function () {
+            return 'Are you sure want to leave?';
+        });
+
+        //when ENTER key is down, get and send the msg from inputbar 
+        $('#MSG').keydown((e) => {
+            if (e.keyCode == 13) {
+                emitMessage();
+            }
+        });
+
+        //when click send button, get and send msg from input bar
+        $('#sendMSG').click(() => {
+            emitMessage();
+        })
+
+        //when selector in the inputBar is changed, change current receiver' name
+        $('#userSelect').change(() => {
+            //$( "#userSelect option:selected" ).val();
+            receiverName = $('#userSelect').find(':selected').val();
+        });
+
+        //pop on msg box to ask userName , if exsits ,ask aggin
+        function EnterUserName() {
+            do {
+                userName = prompt('Please enter your name: ', 'Jingtao');
+            } while (userName == null || userName == '')
+
+            socket.emit('new user', userName);
+            //addon
+            // $('#userList').append($('<li>').text(userName));
+
+            $('#navbar #nav-wrapper ul').append($('<li>').append($('<a>').text('USERNAME: ' + userName)));
+        }
+
+        //convert date formate to show the specific time of msg
+        function FormatDate(currentdate) {
+            var date = new Date(currentdate);
+            var datetime = '[' + Appendzero(date.getHours()) + ':' + Appendzero(date.getMinutes()) + ':' +
+                Appendzero(date.getSeconds()) + ']';
+            return datetime;
+        }
+        //if hours if less than tens, add 0 before for better formating
+        function Appendzero(obj) {
+            if (obj < 10) return "0" + "" + obj;
+            else return obj;
+        }
+
+        ////when starting the app, pop on msg box to ask userName then login
+        if (userName == '' || userName == null)
+            EnterUserName();
+    </script>
+</body>
+
+</html>
