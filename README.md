@@ -1,2 +1,2 @@
 # CS494P
-Internetworking Protocols - code parts form Jingtao
+Internetworking Protocols - chat room code parts form Jingtao
